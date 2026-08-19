@@ -9,6 +9,90 @@ from datetime import datetime, timedelta, date
 import warnings
 warnings.filterwarnings("ignore")
 
+# ─── Google Sheets Config ────────────────────────────────────────────────────
+SPREADSHEET_ID  = "1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM"
+SPREADSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit?gid=0#gid=0"
+
+
+def _get_gsheet_client():
+    """
+    Buat koneksi ke Google Sheets menggunakan service account credentials
+    yang disimpan di st.secrets.[gcp_service_account].
+    Return None jika credentials tidak tersedia (mode tanpa API).
+    """
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client
+    except Exception:
+        return None
+
+
+def save_to_gsheet(ticker: str, close: float, model_name: str, horizon: int,
+                   fdf: pd.DataFrame, prob_up: float, prob_down: float) -> tuple:
+    """
+    Simpan hasil prediksi ke Google Spreadsheet.
+    fdf: DataFrame prediksi dengan index=Tanggal, kolom=[Hari, Prediksi Harga, ...]
+    Return: (success: bool, message: str)
+    """
+    client = _get_gsheet_client()
+    if client is None:
+        return False, "credentials_missing"
+
+    try:
+        sh  = client.open_by_key(SPREADSHEET_ID)
+
+        # Cari / buat sheet bernama ticker (misal "BBCA")
+        sheet_name = ticker.replace(".JK", "")
+        try:
+            ws = sh.worksheet(sheet_name)
+        except Exception:
+            ws = sh.add_worksheet(title=sheet_name, rows="500", cols="10")
+            # Header
+            header = [
+                "Disimpan", "Model", "Horizon",
+                "Harga Saat Ini", "Prob Naik (%)", "Prob Turun (%)",
+                "Tanggal Prediksi", "Hari", "Prediksi Harga (Rp)",
+                "Batas Bawah CI95% (Rp)", "Batas Atas CI95% (Rp)", "Perubahan %"
+            ]
+            ws.append_row(header, value_input_option="USER_ENTERED")
+
+        saved_at = datetime.now().strftime("%d %b %Y %H:%M")
+        rows_to_add = []
+        fdf_reset = fdf.reset_index()
+
+        for _, row in fdf_reset.iterrows():
+            tanggal = str(row.get("Tanggal", ""))
+            hari    = str(row.get("Hari", ""))
+            pred    = float(row.get("Prediksi Harga", 0))
+            lower   = float(row.get("Batas Bawah (CI 95%)", 0)) if "Batas Bawah (CI 95%)" in row else ""
+            upper   = float(row.get("Batas Atas (CI 95%)", 0))  if "Batas Atas (CI 95%)"  in row else ""
+            pct     = str(row.get("Perubahan %", ""))           if "Perubahan %"           in row else ""
+            rows_to_add.append([
+                saved_at, model_name, f"{horizon} hari",
+                round(close, 0), round(prob_up * 100, 1), round(prob_down * 100, 1),
+                tanggal, hari, round(pred, 0),
+                round(lower, 0) if lower != "" else "",
+                round(upper, 0) if upper != "" else "",
+                pct
+            ])
+
+        # Tambahkan pemisah kosong sebelum batch baru
+        ws.append_row(["" ] * 12, value_input_option="USER_ENTERED")
+        ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
+        return True, f"✅ {len(rows_to_add)} baris prediksi berhasil disimpan ke sheet '{sheet_name}'!"
+
+    except Exception as e:
+        return False, f"error: {str(e)}"
+
 # ─── Indonesia Stock Exchange (BEI) Holidays ────────────────────────────────────
 def get_indonesia_holidays(year: int) -> set:
     """
@@ -2562,37 +2646,88 @@ with tab_analysis:
                         unsafe_allow_html=True
                     )
 
-                # ── Link ke Google Spreadsheet ──────────────────────────────────────
-                SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM/edit?gid=0#gid=0"
-                st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
-                st.markdown(
-                    f'''
-                    <div style="background:linear-gradient(135deg,rgba(34,197,94,0.08),rgba(16,185,129,0.05));
-                                border:1px solid rgba(34,197,94,0.3);border-radius:14px;
-                                padding:16px 22px;display:flex;align-items:center;justify-content:space-between;
-                                flex-wrap:wrap;gap:12px;">
-                        <div>
-                            <div style="font-size:0.72rem;color:#4ade80;font-weight:700;
-                                        text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">
-                                📊 Catat & Analisis di Google Spreadsheet
-                            </div>
-                            <div style="font-size:0.8rem;color:#64748b;line-height:1.6;">
-                                Simpan hasil prediksi <b style="color:#f1f5f9;">{ticker}</b> ke spreadsheet Anda untuk
-                                pencatatan & perbandingan antar saham.
-                            </div>
-                        </div>
-                        <a href="{SPREADSHEET_URL}" target="_blank" rel="noopener noreferrer"
-                           style="background:linear-gradient(135deg,#16a34a,#22c55e);
-                                  color:white;font-weight:700;font-size:0.85rem;
-                                  padding:10px 22px;border-radius:10px;text-decoration:none;
-                                  white-space:nowrap;box-shadow:0 4px 16px rgba(34,197,94,0.3);
-                                  display:inline-flex;align-items:center;gap:8px;">
-                            📊 Buka Spreadsheet
-                        </a>
-                    </div>
-                    ''',
-                    unsafe_allow_html=True
-                )
+                # ── Simpan ke Google Spreadsheet ────────────────────────────────────
+                st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
+
+                # Cek apakah credentials tersedia
+                gsheet_ready = _get_gsheet_client() is not None
+
+                col_save, col_link = st.columns([1, 1])
+                with col_save:
+                    save_key = f"save_sheet_{ticker}_{horizon}"
+                    if gsheet_ready:
+                        save_btn = st.button(
+                            "📤 Simpan ke Google Spreadsheet",
+                            key=save_key,
+                            use_container_width=True,
+                            help="Simpan tabel prediksi ini langsung ke Google Spreadsheet Anda"
+                        )
+                        if save_btn:
+                            with st.spinner("⏳ Menyimpan ke Google Spreadsheet..."):
+                                ok, msg = save_to_gsheet(
+                                    ticker, close, model_choice, horizon,
+                                    fdf, prob_up, prob_down
+                                )
+                            if ok:
+                                st.success(msg)
+                                st.balloons()
+                            else:
+                                st.error(f"❌ Gagal menyimpan: {msg}")
+                    else:
+                        st.markdown(
+                            '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);'
+                            'border-radius:10px;padding:12px 16px;font-size:0.78rem;color:#fbbf24;">'
+                            '⚙️ <b>Simpan otomatis belum aktif.</b><br>'
+                            'Perlu setup Google API di Streamlit Secrets. Lihat panduan di bawah.'
+                            '</div>',
+                            unsafe_allow_html=True
+                        )
+
+                with col_link:
+                    st.markdown(
+                        f'<a href="{SPREADSHEET_URL}" target="_blank" rel="noopener noreferrer" '
+                        f'style="display:flex;align-items:center;justify-content:center;gap:8px;'
+                        f'background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(16,185,129,0.08));'
+                        f'border:1px solid rgba(34,197,94,0.35);border-radius:10px;padding:11px 0;'
+                        f'color:#4ade80;font-weight:700;font-size:0.85rem;text-decoration:none;'
+                        f'height:100%;box-sizing:border-box;">'
+                        f'📊 Buka Spreadsheet</a>',
+                        unsafe_allow_html=True
+                    )
+
+                if not gsheet_ready:
+                    with st.expander("📖 Cara Aktifkan Simpan Otomatis ke Google Spreadsheet"):
+                        st.markdown("""
+**Langkah 1 — Buat Google Cloud Service Account:**
+1. Buka [console.cloud.google.com](https://console.cloud.google.com)
+2. Buat project baru (atau pilih yang sudah ada)
+3. Aktifkan **Google Sheets API** dan **Google Drive API**
+4. Buka **IAM & Admin → Service Accounts → Create Service Account**
+5. Download file JSON credentials-nya
+
+**Langkah 2 — Bagikan Spreadsheet ke Service Account:**
+1. Buka file JSON, cari nilai `client_email` (contoh: `nama@project.iam.gserviceaccount.com`)
+2. Buka [Spreadsheet Anda](https://docs.google.com/spreadsheets/d/1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM)
+3. Klik **Share (Bagikan)** → masukkan email service account → beri akses **Editor**
+
+**Langkah 3 — Tambahkan Secrets di Streamlit Cloud:**
+1. Buka [share.streamlit.io](https://share.streamlit.io) → pilih app Anda
+2. Klik **Settings → Secrets**
+3. Paste isi berikut (ganti dengan isi file JSON Anda):
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "YOUR_PROJECT_ID"
+private_key_id = "YOUR_KEY_ID"
+private_key = "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
+client_email = "YOUR@project.iam.gserviceaccount.com"
+client_id = "YOUR_CLIENT_ID"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+```
+4. Klik **Save** → app akan otomatis restart
+5. Setelah itu tombol **Simpan ke Spreadsheet** akan aktif ✅
+                        """)
 
             st.markdown("""<div class="section-header">🧠 Saran AI & Rekomendasi</div>""", unsafe_allow_html=True)
             render_investment_advice(

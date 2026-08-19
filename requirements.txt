@@ -9,3 +9,5 @@ ta>=0.11.0
 requests>=2.31.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
+gspread>=6.0.0
+google-auth>=2.23.0
