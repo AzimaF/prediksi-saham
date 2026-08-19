@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.pyc
+venv/
+env/
+.env
+.venv
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs & Debug files
+*.log
+*.txt
+found_*.txt
+found_*.py
+
+# Temporary / scratch files
+check_*.py
+find_*.py
+indent.py
+recover.py
+original_*.py
+recovered_*.py
+scanner_tab_clean.py
+main_app_section.py
+Prediksi_Saham_extracted.py
+
+# OS
+.DS_Store
+Thumbs.db
