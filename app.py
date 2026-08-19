@@ -18,8 +18,20 @@ SPREADSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
 def _get_apps_script_url() -> str:
     """Ambil URL Google Apps Script dari Streamlit secrets. Return '' jika belum diset."""
     try:
-        url = st.secrets.get("apps_script_url", "")
-        return str(url) if url else ""
+        # Cek di root level
+        if "apps_script_url" in st.secrets:
+            url = st.secrets["apps_script_url"]
+            if url: return str(url)
+            
+        # Cek kalau user masukinnya di dalam section lama (misal di bawah [gcp_service_account])
+        for key in st.secrets:
+            # st.secrets[key] bisa berupa AttrDict/dict jika itu adalah section TOML
+            if hasattr(st.secrets[key], "get") or isinstance(st.secrets[key], dict):
+                if "apps_script_url" in st.secrets[key]:
+                    url = st.secrets[key]["apps_script_url"]
+                    if url: return str(url)
+                    
+        return ""
     except Exception:
         return ""
 
