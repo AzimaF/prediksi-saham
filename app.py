@@ -14,82 +14,54 @@ SPREADSHEET_ID  = "1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM"
 SPREADSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit?gid=0#gid=0"
 
 
-def _get_gsheet_client():
-    """
-    Buat koneksi ke Google Sheets menggunakan service account credentials
-    yang disimpan di st.secrets.[gcp_service_account].
-    Return None jika credentials tidak tersedia (mode tanpa API).
-    """
+# ─── Google Apps Script (cara paling mudah tanpa service account) ────────────
+def _get_apps_script_url() -> str:
+    """Ambil URL Google Apps Script dari Streamlit secrets. Return '' jika belum diset."""
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        client = gspread.authorize(creds)
-        return client
+        url = st.secrets.get("apps_script_url", "")
+        return str(url) if url else ""
     except Exception:
-        return None
+        return ""
 
 
-def save_to_gsheet(ticker: str, close: float, model_name: str, horizon: int,
-                   fdf: pd.DataFrame, prob_up: float, prob_down: float) -> tuple:
+def save_via_apps_script(ticker: str, close: float, model_name: str, horizon: int,
+                         fdf: pd.DataFrame, prob_up: float, prob_down: float) -> tuple:
     """
-    Simpan hasil prediksi ke Google Spreadsheet.
-    fdf: DataFrame prediksi dengan index=Tanggal, kolom=[Hari, Prediksi Harga, ...]
+    Kirim data prediksi ke Google Apps Script Web App → tulis ke Spreadsheet.
+    Tidak perlu service account — cukup satu URL dari Apps Script.
     Return: (success: bool, message: str)
     """
-    client = _get_gsheet_client()
-    if client is None:
-        return False, "credentials_missing"
+    import requests as req_lib
+    url = _get_apps_script_url()
+    if not url:
+        return False, "url_missing"
 
+    saved_at   = datetime.now().strftime("%d %b %Y %H:%M")
+    sheet_name = ticker.replace(".JK", "")
+    fdf_reset  = fdf.reset_index()
+
+    rows = []
+    for _, row in fdf_reset.iterrows():
+        tanggal = str(row.get("Tanggal", ""))
+        hari    = str(row.get("Hari", ""))
+        pred    = round(float(row.get("Prediksi Harga", 0)), 0)
+        lower   = round(float(row.get("Batas Bawah (CI 95%)", 0)), 0) if "Batas Bawah (CI 95%)" in row else ""
+        upper   = round(float(row.get("Batas Atas (CI 95%)", 0)),  0) if "Batas Atas (CI 95%)"  in row else ""
+        pct     = str(row.get("Perubahan %", ""))                      if "Perubahan %"           in row else ""
+        rows.append([
+            saved_at, model_name, f"{horizon} hari",
+            round(close, 0), round(prob_up * 100, 1), round(prob_down * 100, 1),
+            tanggal, hari, pred, lower, upper, pct
+        ])
+
+    payload = {"sheetName": sheet_name, "rows": rows}
     try:
-        sh  = client.open_by_key(SPREADSHEET_ID)
-
-        # Cari / buat sheet bernama ticker (misal "BBCA")
-        sheet_name = ticker.replace(".JK", "")
-        try:
-            ws = sh.worksheet(sheet_name)
-        except Exception:
-            ws = sh.add_worksheet(title=sheet_name, rows="500", cols="10")
-            # Header
-            header = [
-                "Disimpan", "Model", "Horizon",
-                "Harga Saat Ini", "Prob Naik (%)", "Prob Turun (%)",
-                "Tanggal Prediksi", "Hari", "Prediksi Harga (Rp)",
-                "Batas Bawah CI95% (Rp)", "Batas Atas CI95% (Rp)", "Perubahan %"
-            ]
-            ws.append_row(header, value_input_option="USER_ENTERED")
-
-        saved_at = datetime.now().strftime("%d %b %Y %H:%M")
-        rows_to_add = []
-        fdf_reset = fdf.reset_index()
-
-        for _, row in fdf_reset.iterrows():
-            tanggal = str(row.get("Tanggal", ""))
-            hari    = str(row.get("Hari", ""))
-            pred    = float(row.get("Prediksi Harga", 0))
-            lower   = float(row.get("Batas Bawah (CI 95%)", 0)) if "Batas Bawah (CI 95%)" in row else ""
-            upper   = float(row.get("Batas Atas (CI 95%)", 0))  if "Batas Atas (CI 95%)"  in row else ""
-            pct     = str(row.get("Perubahan %", ""))           if "Perubahan %"           in row else ""
-            rows_to_add.append([
-                saved_at, model_name, f"{horizon} hari",
-                round(close, 0), round(prob_up * 100, 1), round(prob_down * 100, 1),
-                tanggal, hari, round(pred, 0),
-                round(lower, 0) if lower != "" else "",
-                round(upper, 0) if upper != "" else "",
-                pct
-            ])
-
-        # Tambahkan pemisah kosong sebelum batch baru
-        ws.append_row(["" ] * 12, value_input_option="USER_ENTERED")
-        ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
-        return True, f"✅ {len(rows_to_add)} baris prediksi berhasil disimpan ke sheet '{sheet_name}'!"
-
+        resp   = req_lib.post(url, json=payload, timeout=20)
+        result = resp.json()
+        if result.get("status") == "success":
+            return True, f"✅ {len(rows)} baris prediksi berhasil disimpan ke sheet '{sheet_name}'!"
+        else:
+            return False, result.get("message", "Unknown error dari Apps Script")
     except Exception as e:
         return False, f"error: {str(e)}"
 
@@ -2655,13 +2627,13 @@ with tab_analysis:
                 # ── Simpan ke Google Spreadsheet ────────────────────────────────────
                 st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
 
-                # Cek apakah credentials tersedia
-                gsheet_ready = _get_gsheet_client() is not None
+                # Cek apakah URL Apps Script tersedia
+                apps_script_ready = bool(_get_apps_script_url())
 
                 col_save, col_link = st.columns([1, 1])
                 with col_save:
                     save_key = f"save_sheet_{ticker}_{horizon}"
-                    if gsheet_ready:
+                    if apps_script_ready:
                         save_btn = st.button(
                             "📤 Simpan ke Google Spreadsheet",
                             key=save_key,
@@ -2670,7 +2642,7 @@ with tab_analysis:
                         )
                         if save_btn:
                             with st.spinner("⏳ Menyimpan ke Google Spreadsheet..."):
-                                ok, msg = save_to_gsheet(
+                                ok, msg = save_via_apps_script(
                                     ticker, close, model_choice, horizon,
                                     fdf, prob_up, prob_down
                                 )
@@ -2684,7 +2656,7 @@ with tab_analysis:
                             '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);'
                             'border-radius:10px;padding:12px 16px;font-size:0.78rem;color:#fbbf24;">'
                             '⚙️ <b>Simpan otomatis belum aktif.</b><br>'
-                            'Perlu setup Google API di Streamlit Secrets. Lihat panduan di bawah.'
+                            'Perlu setup Webhook URL. Lihat panduan di bawah.'
                             '</div>',
                             unsafe_allow_html=True
                         )
@@ -2701,38 +2673,60 @@ with tab_analysis:
                         unsafe_allow_html=True
                     )
 
-                if not gsheet_ready:
-                    with st.expander("📖 Cara Aktifkan Simpan Otomatis ke Google Spreadsheet"):
+                if not apps_script_ready:
+                    with st.expander("📖 Cara Paling Mudah Aktifkan Simpan ke Spreadsheet (1 Menit)"):
                         st.markdown("""
-**Langkah 1 — Buat Google Cloud Service Account:**
-1. Buka [console.cloud.google.com](https://console.cloud.google.com)
-2. Buat project baru (atau pilih yang sudah ada)
-3. Aktifkan **Google Sheets API** dan **Google Drive API**
-4. Buka **IAM & Admin → Service Accounts → Create Service Account**
-5. Download file JSON credentials-nya
+**Hanya 2 Langkah Sangat Mudah! Tidak perlu Google Cloud atau Service Account.**
 
-**Langkah 2 — Bagikan Spreadsheet ke Service Account:**
-1. Buka file JSON, cari nilai `client_email` (contoh: `nama@project.iam.gserviceaccount.com`)
-2. Buka [Spreadsheet Anda](https://docs.google.com/spreadsheets/d/1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM)
-3. Klik **Share (Bagikan)** → masukkan email service account → beri akses **Editor**
+**Langkah 1 — Tambah Kode di Spreadsheet:**
+1. Buka [Google Spreadsheet Anda](https://docs.google.com/spreadsheets/d/1NXkbSNfIPVLIHYAynesY20jzNpboBSzpquVrOE08gXM)
+2. Klik menu **Ekstensi → Apps Script**
+3. Hapus kode yang ada, lalu paste kode berikut:
+```javascript
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var sheetName = data.sheetName;
+    var rows = data.rows;
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      var header = ["Disimpan", "Model", "Horizon", "Harga Saat Ini", "Prob Naik (%)", "Prob Turun (%)", "Tanggal Prediksi", "Hari", "Prediksi Harga (Rp)", "Batas Bawah CI95% (Rp)", "Batas Atas CI95% (Rp)", "Perubahan %"];
+      sheet.appendRow(header);
+      sheet.getRange(1, 1, 1, header.length).setFontWeight("bold");
+    }
+    
+    // Tambah baris kosong sbg pemisah
+    sheet.appendRow(["", "", "", "", "", "", "", "", "", "", "", ""]);
+    
+    // Tulis data banyak baris sekaligus
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    
+    return ContentService.createTextOutput(JSON.stringify({"status": "success", "message": "OK"}))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({"status": "error", "message": String(err)}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+```
+4. Klik **Terapkan / Deploy** → **Deployment Baru** (New Deployment)
+5. Pilih jenis: **Aplikasi Web** (Web app)
+6. Akses: Ubah ke **"Siapa saja"** (Anyone)
+7. Klik **Terapkan / Deploy** dan **berikan izin (Authorize)**. (Jika muncul peringatan keamanan, klik Lanjutan -> Buka proyek)
+8. **Copy URL Aplikasi Web** yang diberikan (berakhiran `/exec`).
 
-**Langkah 3 — Tambahkan Secrets di Streamlit Cloud:**
+**Langkah 2 — Paste URL di Streamlit Cloud:**
 1. Buka [share.streamlit.io](https://share.streamlit.io) → pilih app Anda
 2. Klik **Settings → Secrets**
-3. Paste isi berikut (ganti dengan isi file JSON Anda):
+3. Paste format berikut:
 ```toml
-[gcp_service_account]
-type = "service_account"
-project_id = "YOUR_PROJECT_ID"
-private_key_id = "YOUR_KEY_ID"
-private_key = "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
-client_email = "YOUR@project.iam.gserviceaccount.com"
-client_id = "YOUR_CLIENT_ID"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
+apps_script_url = "PASTE_URL_APPS_SCRIPT_DI_SINI"
 ```
-4. Klik **Save** → app akan otomatis restart
-5. Setelah itu tombol **Simpan ke Spreadsheet** akan aktif ✅
+4. Klik **Save** → app akan restart. Tombol simpan akan langsung aktif! ✅
                         """)
 
             st.markdown("""<div class="section-header">🧠 Saran AI & Rekomendasi</div>""", unsafe_allow_html=True)
