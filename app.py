@@ -2292,25 +2292,31 @@ with tab_analysis:
             pos52  = 0.0
             if w52h and w52l and (w52h - w52l) > 0:
                 pos52 = max(0, min(100, (close - w52l) / (w52h - w52l) * 100))
+            # Pre-compute safe display strings to avoid None formatting errors
+            w52h_str = f"Rp {w52h:,.0f}"  if w52h is not None else "N/A"
+            w52l_str = f"Rp {w52l:,.0f}"  if w52l is not None else "N/A"
+            pos52_str = f"{pos52:.0f}"     if w52h is not None and w52l is not None else "0"
+            pos52_val = pos52              if w52h is not None and w52l is not None else 0
+
             st.markdown(f"""<div class="metric-card" style="padding:22px 26px;">
                 <div style="color:#f1f5f9;font-weight:800;font-size:1.15rem;margin-bottom:16px;">{cname}</div>
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;">
                     <div><div class="metric-label">Sektor</div><div style="color:#93c5fd;font-weight:600;font-size:0.82rem;">{sector}</div></div>
                     <div><div class="metric-label">Industri</div><div style="color:#93c5fd;font-weight:600;font-size:0.82rem;">{indust}</div></div>
                     <div><div class="metric-label">Avg Volume</div><div style="color:#e2e8f0;font-weight:600;font-size:0.82rem;">{format_number(avgvol) if avgvol else 'N/A'}</div></div>
-                    <div><div class="metric-label">52W High</div><div style="color:#4ade80;font-weight:700;font-size:0.82rem;">Rp {w52h:,.0f}</div></div>
-                    <div><div class="metric-label">52W Low</div><div style="color:#f87171;font-weight:700;font-size:0.82rem;">Rp {w52l:,.0f}</div></div>
+                    <div><div class="metric-label">52W High</div><div style="color:#4ade80;font-weight:700;font-size:0.82rem;">{w52h_str}</div></div>
+                    <div><div class="metric-label">52W Low</div><div style="color:#f87171;font-weight:700;font-size:0.82rem;">{w52l_str}</div></div>
                     <div><div class="metric-label">Mata Uang</div><div style="color:#e2e8f0;font-weight:600;font-size:0.82rem;">{curr}</div></div>
                 </div>
                 <div>
                     <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#475569;margin-bottom:5px;">
-                        <span>52W Range</span><span style="color:#93c5fd;font-weight:600;">{pos52:.0f}% dari Low</span>
+                        <span>52W Range</span><span style="color:#93c5fd;font-weight:600;">{pos52_str}% dari Low</span>
                     </div>
                     <div class="prob-bar-track">
-                        <div style="height:100%;border-radius:999px;width:{pos52}%;background:linear-gradient(90deg,#f87171,#fbbf24,#4ade80);"></div>
+                        <div style="height:100%;border-radius:999px;width:{pos52_val}%;background:linear-gradient(90deg,#f87171,#fbbf24,#4ade80);"></div>
                     </div>
                     <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#374151;margin-top:4px;">
-                        <span>Rp {w52l:,.0f}</span><span>Rp {w52h:,.0f}</span>
+                        <span>{w52l_str}</span><span>{w52h_str}</span>
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
