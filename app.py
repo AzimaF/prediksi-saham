@@ -2126,6 +2126,8 @@ with st.sidebar:
 
     st.markdown("---")
     run_btn = st.button("🔮 Mulai Prediksi", use_container_width=True)
+    if run_btn:
+        st.session_state.app_has_run = True
 
     st.markdown("""<div class="info-box">
         💡 <b>Tips:</b><br>Data otomatis dari Yahoo Finance.
@@ -2144,7 +2146,7 @@ with tab_scanner:
 
 with tab_analysis:
     # Landing page (before run_btn)
-    if not run_btn:
+    if not st.session_state.get('app_has_run', False):
         if show_ihsg:
             st.markdown('<div class="section-header">🏛️ IHSG — Kondisi Pasar Saat Ini</div>', unsafe_allow_html=True)
             with st.spinner("📡 Mengambil data IHSG..."):
