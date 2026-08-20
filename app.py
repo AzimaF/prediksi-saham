@@ -502,11 +502,56 @@ st.markdown("""
         border: none;
     }
 
-    /* Responsive grid fix */
+    /* ─── Responsive & Mobile Optimizations ─── */
+    
+    /* Tablet & Small Desktop (max 1024px) */
+    @media (max-width: 1024px) {
+        .hero-title { font-size: 1.8rem; }
+        .ihsg-price { font-size: 1.6rem; }
+        .price-display { font-size: 2rem; }
+    }
+    
+    /* Mobile / Tablet Portrait (max 768px) */
     @media (max-width: 768px) {
-        .model-grid { grid-template-columns: 1fr 1fr !important; }
-        .hero-header { padding: 20px 20px !important; }
+        .model-grid { grid-template-columns: 1fr !important; gap: 10px; }
+        .hero-header { padding: 24px 20px !important; }
         .ihsg-panel { padding: 16px 18px !important; }
+        
+        .hero-title { font-size: 1.6rem; }
+        .price-display { font-size: 1.8rem; }
+        .ihsg-price { font-size: 1.4rem; }
+        
+        .prob-container { padding: 16px 18px; margin: 8px 0; }
+        .metric-card { min-height: auto; padding: 14px 16px; margin: 6px 0; }
+        .metric-value { font-size: 1.1rem; }
+        .metric-label { font-size: 0.65rem; }
+        
+        .section-header { 
+            font-size: 0.9rem; 
+            padding: 8px 16px; 
+            margin: 20px 0 12px 0; 
+        }
+        
+        /* Adjust Streamlit specific elements for mobile */
+        .stButton > button { padding: 10px !important; font-size: 0.85rem !important; }
+        .block-container { padding-top: 1rem; padding-bottom: 1rem; padding-left: 1rem; padding-right: 1rem; }
+    }
+
+    /* Small Mobile (max 480px) */
+    @media (max-width: 480px) {
+        .hero-title { font-size: 1.4rem; }
+        .ihsg-price { font-size: 1.25rem; }
+        .price-display { font-size: 1.5rem; }
+        
+        .hero-header { padding: 18px 14px !important; border-radius: 16px; }
+        .ihsg-panel { padding: 14px 14px !important; border-radius: 14px; }
+        .prob-container { padding: 14px 14px; }
+        .metric-card { padding: 12px 14px; }
+        .metric-value { font-size: 1rem; }
+        
+        /* Force table/dataframe scrolling on mobile to prevent overflow */
+        [data-testid="stTable"] { overflow-x: auto; }
+        [data-testid="stDataFrame"] { overflow-x: auto; }
     }
 </style>
 """, unsafe_allow_html=True)
