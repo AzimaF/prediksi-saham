@@ -532,6 +532,11 @@ st.markdown("""
             margin: 20px 0 12px 0; 
         }
         
+        .prob-grid { grid-template-columns: 1fr 1fr !important; gap: 14px !important; }
+        .stats-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+        .table-grid { overflow-x: auto; display: block; }
+        .table-grid > div { min-width: 800px; }
+        
         /* Adjust Streamlit specific elements for mobile */
         .stButton > button { padding: 10px !important; font-size: 0.85rem !important; }
         .block-container { padding-top: 1rem; padding-bottom: 1rem; padding-left: 1rem; padding-right: 1rem; }
@@ -548,6 +553,8 @@ st.markdown("""
         .prob-container { padding: 14px 14px; }
         .metric-card { padding: 12px 14px; }
         .metric-value { font-size: 1rem; }
+        
+        .prob-grid { grid-template-columns: 1fr !important; gap: 16px !important; text-align: center; }
         
         /* Force table/dataframe scrolling on mobile to prevent overflow */
         [data-testid="stTable"] { overflow-x: auto; }
@@ -1233,7 +1240,7 @@ def render_probability_card(prob_up, prob_down, model_name, future_pct, hist_vol
     <div style="font-size:0.7rem;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;">
         🎲 Probabilitas AI — {model_name} · Monte Carlo (2.000 skenario) · Horizon {horizon} Hari
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:20px;align-items:center;">
+    <div class="prob-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:20px;align-items:center;">
         <div>
             <div style="font-size:0.72rem;color:#4ade80;font-weight:700;margin-bottom:6px;">NAIK 📈</div>
             <div class="prob-bar-track"><div class="prob-bar-fill-up" style="width:{up_pct}%"></div></div>
